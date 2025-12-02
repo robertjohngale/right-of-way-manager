@@ -173,6 +173,9 @@ export default class Widget extends React.PureComponent<AllWidgetProps<any>, Sta
     this.setState({
       lines: [...lines, newLine],
       nextLineId: nextLineId + 1
+    }, () => {
+      // Automatically build ROW polygon after adding line
+      this.buildROW(nextLineId);
     });
   };
 
@@ -401,7 +404,6 @@ export default class Widget extends React.PureComponent<AllWidgetProps<any>, Sta
                     <td style={{ padding: '4px', border: '1px solid #ccc' }}>
                       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                         <Button size="sm" onClick={() => this.zoomToLine(line.id)}>Zoom</Button>
-                        <Button size="sm" onClick={() => this.buildROW(line.id)}>ROW</Button>
                         <Button size="sm" onClick={() => this.showVertices(line.id)}>Vertices</Button>
                         <Button size="sm" onClick={() => this.exportLineGeoJSON(line.id)}>Export</Button>
                         <Button size="sm" type="danger" onClick={() => this.deleteLine(line.id)}>Del</Button>
