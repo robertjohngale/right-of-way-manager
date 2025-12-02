@@ -1,0 +1,16 @@
+{
+  "name": "right_of_way_manager",
+  "type": "widget",
+  "version": "1.0.0",
+  "exbVersion": "1.15.0",
+  "author": "Custom",
+  "description": "Create, manage, and analyze multiple centerlines and right-of-way polygons",
+  "copyright": "",
+  "license": "",
+  "properties": {},
+  "translatedLocales": ["en"],
+  "defaultSize": {
+    "width": 450,
+    "height": 600
+  }
+}
