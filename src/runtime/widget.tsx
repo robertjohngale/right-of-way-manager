@@ -4,11 +4,13 @@ import { JimuMapView, MapViewManager } from 'jimu-arcgis';
 import { Button, Select, Option, TextInput, Label, Modal, ModalHeader, ModalBody } from 'jimu-ui';
 import GraphicsLayer from 'esri/layers/GraphicsLayer';
 import SketchViewModel from 'esri/widgets/Sketch/SketchViewModel';
+import Draw from 'esri/views/draw/Draw';
 import Graphic from 'esri/Graphic';
 import Polyline from 'esri/geometry/Polyline';
 import Polygon from 'esri/geometry/Polygon';
 import SimpleLineSymbol from 'esri/symbols/SimpleLineSymbol';
 import SimpleFillSymbol from 'esri/symbols/SimpleFillSymbol';
+import * as geometryEngine from 'esri/geometry/geometryEngine';
 import * as reactiveUtils from 'esri/core/reactiveUtils';
 import { buildRowPolygon, computeVertexAnalytics, calculateArea, calculatePerimeter, VertexInfo } from './geometryUtils';
 import { exportGeoJSON, exportVerticesCSV } from './exportUtils';
@@ -40,6 +42,7 @@ interface State {
   leftWidth: number;
   rightWidth: number;
   mode: 'draw' | 'select';
+  drawingMethod: 'sketch' | 'realtime';
   selectedLayerId: string;
   lines: LineRecord[];
   polygons: PolygonRecord[];
@@ -54,6 +57,7 @@ interface State {
 export default class Widget extends React.PureComponent<AllWidgetProps<any>, State> {
   private centerlineLayer: GraphicsLayer;
   private rowLayer: GraphicsLayer;
+  private previewLayer: GraphicsLayer;
   private sketchViewModel: SketchViewModel;
   private viewManager: any;
 
@@ -70,6 +74,7 @@ export default class Widget extends React.PureComponent<AllWidgetProps<any>, Sta
       leftWidth: 50,
       rightWidth: 50,
       mode: 'draw',
+      drawingMethod: 'sketch',
       selectedLayerId: '',
       lines: [],
       polygons: [],
@@ -112,8 +117,14 @@ export default class Widget extends React.PureComponent<AllWidgetProps<any>, Sta
           title: 'Right of Way Polygons'
         });
 
+        this.previewLayer = new GraphicsLayer({
+          id: 'PreviewLayer',
+          title: 'Drawing Preview'
+        });
+
         jimuMapView.view.map.add(this.centerlineLayer);
         jimuMapView.view.map.add(this.rowLayer);
+        jimuMapView.view.map.add(this.previewLayer);
 
         // Initialize SketchViewModel
         this.sketchViewModel = new SketchViewModel({
@@ -139,7 +150,85 @@ export default class Widget extends React.PureComponent<AllWidgetProps<any>, Sta
     }
 
     this.setState({ isDrawing: true });
-    this.sketchViewModel.create('polyline', { mode: 'click' });
+
+    if (this.state.drawingMethod === 'realtime') {
+      this.startRealtimeDrawing();
+    } else {
+      this.sketchViewModel.create('polyline', { mode: 'click' });
+    }
+  };
+
+  startRealtimeDrawing = () => {
+    const draw = new Draw({ view: this.state.jimuMapView.view });
+    this.previewLayer.removeAll();
+
+    const action = draw.create('polyline');
+
+    action.on([
+      'vertex-add',
+      'vertex-remove',
+      'cursor-update',
+      'redo',
+      'undo',
+      'draw-complete'
+    ], (event) => this.updateRealtimePreview(event));
+  };
+
+  updateRealtimePreview = (event: any) => {
+    if (event.vertices.length > 1) {
+      this.previewLayer.removeAll();
+
+      // Create centerline geometry
+      const centerlineGeometry = new Polyline({
+        paths: [event.vertices],
+        spatialReference: this.state.jimuMapView.view.spatialReference
+      });
+
+      // Create centerline graphic
+      const centerlineSymbol = new SimpleLineSymbol({
+        color: [0, 112, 255],
+        width: 3
+      });
+
+      const centerlineGraphic = new Graphic({
+        geometry: centerlineGeometry,
+        symbol: centerlineSymbol
+      });
+
+      // Create ROW buffer preview
+      try {
+        const rowPolygon = buildRowPolygon(
+          centerlineGeometry,
+          this.state.leftWidth,
+          this.state.rightWidth
+        );
+
+        const fillSymbol = new SimpleFillSymbol({
+          color: [255, 0, 0, 0.3],
+          outline: {
+            color: [255, 0, 0],
+            width: 2
+          }
+        });
+
+        const rowGraphic = new Graphic({
+          geometry: rowPolygon,
+          symbol: fillSymbol
+        });
+
+        this.previewLayer.addMany([rowGraphic, centerlineGraphic]);
+      } catch (error) {
+        // Just show centerline if ROW creation fails during preview
+        this.previewLayer.add(centerlineGraphic);
+      }
+
+      // On draw-complete, save the line
+      if (event.type === 'draw-complete') {
+        this.previewLayer.removeAll();
+        this.addLine(centerlineGeometry);
+        this.setState({ isDrawing: false });
+      }
+    }
   };
 
   addLine = (geometry: Polyline) => {
@@ -347,6 +436,18 @@ export default class Widget extends React.PureComponent<AllWidgetProps<any>, Sta
             >
               <Option value="draw">Draw Centerline</Option>
               <Option value="select">Select Existing Line</Option>
+            </Select>
+          </Label>
+
+          <Label>
+            Drawing Method
+            <Select
+              value={this.state.drawingMethod}
+              onChange={(e) => this.setState({ drawingMethod: e.target.value as 'sketch' | 'realtime' })}
+              style={{ width: '100%', marginBottom: '10px' }}
+            >
+              <Option value="sketch">Standard (Click to Complete)</Option>
+              <Option value="realtime">Real-time Preview</Option>
             </Select>
           </Label>
 
